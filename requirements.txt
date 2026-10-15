@@ -8,3 +8,5 @@ sentence-transformers
 pypdf
 rank_bm25
 fonttools
+langchain-core
+langchain-text-splitters

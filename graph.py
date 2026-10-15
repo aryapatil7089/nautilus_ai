@@ -9,15 +9,14 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
 
-# 1. Initialize the LLM (Using Mixtral on Groq)
+# Initialize the LLM
 print("Initializing LLM...")
-# Fails safely if API key is not set
 if "GROQ_API_KEY" not in os.environ:
     raise ValueError("Please set the GROQ_API_KEY environment variable.")
 
 llm = ChatGroq(model_name="openai/gpt-oss-20b", temperature=0.2)
 
-# 2. Re-initialize our Hybrid Search pipeline
+# Re-initialize Hybrid Search Indexes
 print("Waking up Hybrid Search Indexes...")
 loader = PyPDFDirectoryLoader("data")
 documents = loader.load()
@@ -44,19 +43,19 @@ def security_node(state: MessagesState):
     restricted_terms = ["salary", "salaries", "board meeting", "password", "employee records"]
     
     if any(term in last_message for term in restricted_terms):
-        return {"messages": [AIMessage(content="SECURITY ALERT: Unauthorized access attempt detected. Query rejected.")]}
+        return {"messages": [AIMessage(content="[SECURITY_BLOCK] I am a maritime compliance assistant. I am not authorized to access or discuss internal corporate data, such as employee records or salaries.")]}
     return {"messages": []}
 
 def security_router(state: MessagesState):
     last_message = state["messages"][-1]
-    if isinstance(last_message, AIMessage) and "SECURITY ALERT" in last_message.content:
+    if isinstance(last_message, AIMessage) and "[SECURITY_BLOCK]" in last_message.content:
         return END
     return "supervisor_node"
 
 def supervisor_node(state: MessagesState):
     print("-> [Supervisor Agent] Evaluating intent...")
     query = state["messages"][-1].content.lower()
-    legal_keywords = ["law", "penalty", "ofac", "ais", "spoofing", "compliance", "sanction", "article", "fine"]
+    legal_keywords = ["law", "penalty", "ofac", "ais", "spoofing", "compliance", "sanction", "article", "fine", "warning", "procedure"]
     
     if any(word in query for word in legal_keywords):
         return {"messages": [AIMessage(content="ROUTING_TO_SEARCH")]}
@@ -71,13 +70,11 @@ def supervisor_router(state: MessagesState):
 
 def hybrid_search_node(state: MessagesState):
     print("-> [Hybrid Search Node] Retrieving legal texts and generating answer...")
-    query = state["messages"][-2].content # The user's actual question
+    query = state["messages"][-2].content 
     
-    # Run the hybrid search
     docs = ensemble_retriever.invoke(query)
     context = "\n\n".join([doc.page_content for doc in docs])
     
-    # Instruct the AI to act as a strict legal assistant
     system_prompt = f"""You are Nautilus, a strict maritime compliance AI. 
     Answer the user's question using ONLY the provided legal context below. Keep your response under 3 sentences.
     If exact penalty amounts are not explicitly stated, simply explain what the text DOES say about the consequences of AIS manipulation, disabling, or modification (e.g., enhanced due diligence, investigation). 
@@ -85,7 +82,6 @@ def hybrid_search_node(state: MessagesState):
     
     CONTEXT:
     {context}"""
-
     
     response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=query)])
     return {"messages": [response]}
@@ -94,9 +90,15 @@ def direct_chat_node(state: MessagesState):
     print("-> [Direct Chat Node] Generating conversational response...")
     query = state["messages"][-2].content
     
-    system_prompt = "You are Nautilus, a helpful maritime compliance AI assistant. Keep responses brief and professional."
+    # We add a strict boundary enforcement prompt
+    system_prompt = """You are Nautilus, a strict maritime compliance AI assistant. 
+    Your ONLY purpose is to discuss maritime regulations, sanctions, and your capabilities. 
+    If the user asks about ANY other topic (general knowledge, inappropriate topics, coding, weather, etc.), you must politely refuse and state that you only discuss maritime compliance. 
+    Keep responses brief and professional."""
+    
     response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=query)])
     return {"messages": [response]}
+
 
 # --- BUILD GRAPH ---
 builder = StateGraph(MessagesState)
@@ -113,15 +115,3 @@ builder.add_edge("hybrid_search_node", END)
 builder.add_edge("direct_chat_node", END)
 
 nautilus_app = builder.compile()
-
-# --- RUN TESTS ---
-if __name__ == "__main__":
-    print("\n\n=== NAUTILUS SYSTEM ONLINE ===")
-    
-    print("\n--- TEST 1: The Casual Chat ---")
-    casual_state = nautilus_app.invoke({"messages": [HumanMessage(content="Hello, who are you?")]})
-    print(f"Final Answer: {casual_state['messages'][-1].content}\n")
-
-    print("--- TEST 2: The Legal Query ---")
-    legal_state = nautilus_app.invoke({"messages": [HumanMessage(content="What are the penalties for AIS spoofing?")]})
-    print(f"Final Answer: {legal_state['messages'][-1].content}\n")

@@ -1,0 +1,10 @@
+streamlit
+langchain
+langchain-community
+langchain-groq
+langgraph
+chromadb
+sentence-transformers
+pypdf
+rank_bm25
+fonttools

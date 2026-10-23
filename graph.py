@@ -13,7 +13,7 @@ from langchain.retrievers import EnsembleRetriever
 if "GROQ_API_KEY" not in os.environ:
     raise ValueError("Please set the GROQ_API_KEY environment variable.")
 
-llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.1)
+llm = ChatGroq(model_name="openai/gpt-oss-20b", temperature=0.1)
 
 # 2. Build / Wake Up Hybrid Search Engine
 print("Initializing Hybrid Retrieval Engine...")

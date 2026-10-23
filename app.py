@@ -1,5 +1,5 @@
 import streamlit as st
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from graph import nautilus_app
 
 # Configure application metadata and widescreen view
@@ -18,48 +18,40 @@ if "messages" not in st.session_state:
 
 # Sidebar: Displays real-time architecture telemetry for reviewers
 with st.sidebar:
-    st.header("🛡️ Multi-Agent Telemetry")
+    st.markdown("### 🛡️ Multi-Agent Telemetry")
     st.markdown("**Active Architecture Controls:**")
     st.markdown("- **Security Layer:** Lexical screening & query boundary enforcement")
     st.markdown("- **Supervisor Node:** Semantic routing & intent classification")
     st.markdown("- **Retrieval Engine:** Hybrid BM25 (Sparse) + ChromaDB (Dense) via RRF")
-    st.markdown("---")
-    st.markdown("### Execution Trace")
-    log_placeholder = st.empty()
-    log_placeholder.info("Ready for input. Waiting for user query...")
 
-# Render historical messages
+# Render historical chat messages
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Process new user input
+# Handle user input
 if prompt := st.chat_input("Enter a maritime regulatory or compliance query..."):
-    # Append and render user message
+    # Append user message to state and UI
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
+        
+    # Convert Streamlit history to LangChain message objects
+    messages_history = []
+    for msg in st.session_state.messages:
+        if msg["role"] == "user":
+            messages_history.append(HumanMessage(content=msg["content"]))
+        elif msg["role"] == "assistant":
+            messages_history.append(AIMessage(content=msg["content"]))
 
-    # Invoke the LangGraph multi-agent state machine
+    # Generate response using the graph
     with st.chat_message("assistant"):
-        with st.spinner("Traversing multi-agent routing graph..."):
+        with st.spinner("Processing multi-agent routing graph..."):
             try:
-                state_output = nautilus_app.invoke({
-                    "messages": [HumanMessage(content=prompt)]
-                })
-                final_response = state_output["messages"][-1].content
-                
-                # Check for the hidden security tag
-                if "[SECURITY_BLOCK]" in final_response:
-                    # Remove the tag so the user just sees the polite refusal
-                    clean_response = final_response.replace("[SECURITY_BLOCK] ", "")
-                    st.markdown(clean_response)
-                    log_placeholder.warning("⚠️ **Security Node Triggered:** Boundary enforcement activated. Pipeline halted.")
-                    st.session_state.messages.append({"role": "assistant", "content": clean_response})
-                else:
-                    st.markdown(final_response)
-                    log_placeholder.success("✅ **Pipeline Execution:** Security Cleared → Supervisor Dispatched → Context Fused via RRF")
-                    st.session_state.messages.append({"role": "assistant", "content": final_response})
-
+                output = nautilus_app.invoke({"messages": messages_history})
+                response_content = output["messages"][-1].content
+                st.markdown(response_content)
+                # Append assistant response to state
+                st.session_state.messages.append({"role": "assistant", "content": response_content})
             except Exception as e:
-                st.error(f"Pipeline Execution Error: {str(e)}")
+                st.error(f"Execution Error: {str(e)}")
